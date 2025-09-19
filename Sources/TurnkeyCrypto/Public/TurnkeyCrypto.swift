@@ -1,5 +1,6 @@
 import CryptoKit
 import Foundation
+import Security
 import TurnkeyEncoding
 
 public struct TurnkeyCrypto {
@@ -25,6 +26,47 @@ public struct TurnkeyCrypto {
       publicKeyUncompressed: pubHexUncompressed,
       publicKeyCompressed: pubHexCompressed,
       privateKey: privHex
+    )
+  }
+
+  /// Generates a new P-256 keypair. When `useSecureEnclave` is true, the private key remains inside the
+  /// device Secure Enclave and the returned `privateKey` string encodes the key reference rather than the
+  /// raw bytes. The stamp protocol remains unchanged because the Secure Enclave signer produces the same
+  /// DER-encoded signatures as the software key.
+  ///
+  /// - Parameters:
+  ///   - useSecureEnclave: If `true`, create the private key inside Secure Enclave.
+  ///   - accessControl: Optional `SecAccessControl` configuration to apply to the Secure Enclave private key.
+  ///     When omitted, a default of `kSecAttrAccessibleWhenUnlockedThisDeviceOnly` with `.privateKeyUsage`
+  ///     is used.
+  @available(iOS 13.0, macOS 10.15, watchOS 6.0, tvOS 13.0, *)
+  public static func generateP256KeyPair(
+    useSecureEnclave: Bool,
+    accessControl: SecAccessControl? = nil
+  ) throws -> (
+    publicKeyUncompressed: String,
+    publicKeyCompressed: String,
+    privateKey: String
+  ) {
+    guard useSecureEnclave else { return generateP256KeyPair() }
+
+    guard SecureEnclave.isAvailable else {
+      throw CryptoError.secureEnclaveUnavailable
+    }
+
+    let configuredAccessControl = try accessControl ?? defaultSecureEnclaveAccessControl()
+    let privateKey = try SecureEnclave.P256.Signing.PrivateKey(accessControl: configuredAccessControl)
+
+    let pubHexUncompressed = privateKey.publicKey.x963Representation.toHexString()
+    let pubHexCompressed = privateKey.publicKey.compressedRepresentation.toHexString()
+
+    let keyReference = privateKey.dataRepresentation
+    let encodedReference = SecureEnclaveKeyEncoding.encode(keyReference)
+
+    return (
+      publicKeyUncompressed: pubHexUncompressed,
+      publicKeyCompressed: pubHexCompressed,
+      privateKey: encodedReference
     )
   }
 
@@ -109,5 +151,22 @@ public struct TurnkeyCrypto {
       organizationId: organizationId,
       dangerouslyOverrideSignerPublicKey: dangerouslyOverrideSignerPublicKey
     )
+  }
+}
+
+@available(iOS 13.0, macOS 10.15, watchOS 6.0, tvOS 13.0, *)
+private extension TurnkeyCrypto {
+  static func defaultSecureEnclaveAccessControl() throws -> SecAccessControl {
+    var error: Unmanaged<CFError>?
+    guard let access = SecAccessControlCreateWithFlags(
+      nil,
+      kSecAttrAccessibleWhenUnlockedThisDeviceOnly,
+      .privateKeyUsage,
+      &error
+    ) else {
+      let underlying = error?.takeRetainedValue()
+      throw CryptoError.secureEnclaveAccessControlCreationFailed(underlying: underlying)
+    }
+    return access
   }
 }
