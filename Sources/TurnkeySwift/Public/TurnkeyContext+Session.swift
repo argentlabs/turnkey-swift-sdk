@@ -1,4 +1,5 @@
 import Foundation
+import Security
 import TurnkeyCrypto
 import TurnkeyHttp
 
@@ -6,11 +7,29 @@ extension TurnkeyContext {
     
     /// Generates a new ephemeral key pair, stores it securely, and adds it to the pending list.
     ///
+    /// - Parameters:
+    ///   - storeInSecureEnclave: When `true`, the private key is created inside Secure Enclave and the stored
+    ///     value is a key reference rather than raw hex. Defaults to `false` for backward compatibility.
+    ///   - secureEnclaveAccessControl: Optional `SecAccessControl` configuration applied to the Secure Enclave
+    ///     private key. Ignored when `storeInSecureEnclave` is `false`.
     /// - Returns: The public key string.
     /// - Throws: An error if the key could not be saved.
     @discardableResult
-    public func createKeyPair() throws -> String {
-        let (_, publicKey, privateKey) = TurnkeyCrypto.generateP256KeyPair()
+    public func createKeyPair(
+        storeInSecureEnclave: Bool = false,
+        secureEnclaveAccessControl: SecAccessControl? = nil
+    ) throws -> String {
+        let keyPair: (String, String, String)
+        if storeInSecureEnclave {
+            keyPair = try TurnkeyCrypto.generateP256KeyPair(
+                useSecureEnclave: true,
+                accessControl: secureEnclaveAccessControl
+            )
+        } else {
+            keyPair = TurnkeyCrypto.generateP256KeyPair()
+        }
+
+        let (_, publicKey, privateKey) = keyPair
         try KeyPairStore.save(privateHex: privateKey, for: publicKey)
         try PendingKeysStore.add(publicKey)
         return publicKey
@@ -217,5 +236,3 @@ extension TurnkeyContext {
     }
     
 }
-
-

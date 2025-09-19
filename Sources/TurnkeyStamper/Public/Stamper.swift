@@ -2,6 +2,7 @@ import AuthenticationServices
 import CryptoKit
 import Foundation
 import LocalAuthentication
+import TurnkeyEncoding
 import TurnkeyPasskeys
 
 public class Stamper {
@@ -21,7 +22,8 @@ public class Stamper {
   ///
   /// - Parameters:
   ///   - apiPublicKey: The public key in hex format.
-  ///   - apiPrivateKey: The corresponding private key in hex format.
+  ///   - apiPrivateKey: The corresponding private key in hex format or a Secure Enclave key reference
+  ///     produced by `TurnkeyCrypto.generateP256KeyPair(useSecureEnclave: true)`.
   public init(apiPublicKey: String, apiPrivateKey: String) {
     self.apiPublicKey = apiPublicKey
     self.apiPrivateKey = apiPrivateKey
@@ -56,6 +58,15 @@ public class Stamper {
     let payloadHash = SHA256.hash(data: payloadData)
 
     if let pub = apiPublicKey, let priv = apiPrivateKey {
+      if SecureEnclaveKeyEncoding.isEncodedKey(priv) {
+        guard let secureData = SecureEnclaveKeyEncoding.decode(priv) else {
+          throw ApiKeyStampError.invalidPrivateKey
+        }
+        let stamp = try SecureEnclaveApiKeyStamper.stamp(
+          payload: payloadHash, publicKeyHex: pub, secureKeyData: secureData)
+        return ("X-Stamp", stamp)
+      }
+
       let stamp = try ApiKeyStamper.stamp(
         payload: payloadHash, publicKeyHex: pub, privateKeyHex: priv)
       return ("X-Stamp", stamp)

@@ -10,6 +10,8 @@ public enum CryptoError: Error {
   case invalidPublicLength(expected: Int, found: Int)
   case invalidSignatureEncoding
   case invalidUTF8
+  case secureEnclaveUnavailable
+  case secureEnclaveAccessControlCreationFailed(underlying: Error?)
 
   case missingCiphertext
   case missingEncappedPublic
@@ -40,6 +42,13 @@ extension CryptoError: LocalizedError {
       return "ECDSA signature isn’t valid DER."
     case .invalidUTF8:
       return "Byte-sequence is not valid UTF-8 text."
+    case .secureEnclaveUnavailable:
+      return "Secure Enclave is not available on this device."
+    case .secureEnclaveAccessControlCreationFailed(let error):
+      if let error {
+        return "Failed to configure Secure Enclave access control: \(error.localizedDescription)"
+      }
+      return "Failed to configure Secure Enclave access control."
     case .missingCiphertext:
       return "Signed payload lacked “ciphertext”."
     case .missingEncappedPublic:
